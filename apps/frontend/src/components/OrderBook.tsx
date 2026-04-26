@@ -8,16 +8,19 @@ interface OrderBookProps {
   symbol: string;
 }
 
-function formatPrice(symbol: string, price: number): string {
-  return symbol.includes("IDR")
-    ? price.toLocaleString("en-US", { minimumFractionDigits: 2 })
-    : price.toFixed(5);
+function formatPrice(_symbol: string, price: number): string {
+  // Crypto order book prices — always 2 decimal places (USDT pairs)
+  return price.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatQty(qty: number): string {
-  if (qty >= 1_000_000) return `${(qty / 1_000_000).toFixed(2)}M`;
-  if (qty >= 1_000) return `${(qty / 1_000).toFixed(1)}K`;
-  return qty.toString();
+  // Crypto qty bisa berupa desimal kecil (mis. 0.5 BTC)
+  if (qty >= 1_000) return `${(qty / 1_000).toFixed(2)}K`;
+  if (qty >= 1) return qty.toFixed(4);
+  return qty.toFixed(6);
 }
 
 function getBarWidth(qty: number, maxQty: number): number {
@@ -185,9 +188,7 @@ export function OrderBook({ data, symbol }: OrderBookProps) {
             SPREAD
           </span>
           <span style={{ fontSize: "11px", color: "var(--color-brand)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
-            {(data.asks[0].price - data.bids[0].price).toFixed(
-              symbol.includes("IDR") ? 2 : 5
-            )}
+            {(data.asks[0].price - data.bids[0].price).toFixed(2)}
           </span>
         </div>
       )}

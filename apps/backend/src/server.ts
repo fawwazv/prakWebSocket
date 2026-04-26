@@ -2,13 +2,13 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import { MarketSimulator } from './market/MarketSimulator';
+import { BinanceRelay } from './relay/BinanceRelay';
 
 const app = express();
 
 app.use(
   cors({
-    origin: 'http://localhost:3000',
+    origin: '*',
     methods: ['GET', 'POST'],
   })
 );
@@ -21,10 +21,9 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: '*',
     methods: ['GET', 'POST'],
   },
-  // Tune transport for performance
   transports: ['websocket'],
   pingInterval: 10_000,
   pingTimeout: 5_000,
@@ -47,27 +46,32 @@ io.on('connection', (socket) => {
   });
 });
 
-// Single MarketSimulator instance — one interval for all symbols
-const simulator = new MarketSimulator();
+// ── Binance Relay: terima data riil, broadcast ke semua klien ──────────────
+const relay = new BinanceRelay(
+  // onTicker: relay setiap tick Binance ke semua frontend
+  (ticker) => {
+    io.emit('tick', ticker);
+  },
+  // onOrderBook: relay order book depth5 ke semua frontend
+  (orderBook) => {
+    io.emit('orderBook', orderBook);
+  }
+);
 
-simulator.start((tick, orderBook) => {
-  // Broadcast to all connected clients
-  io.emit('tick', tick);
-  io.emit('orderBook', orderBook);
-});
+relay.start();
 
 const PORT = 4000;
 
 httpServer.listen(PORT, () => {
-  console.log(`\n🚀  Market Engine  →  http://localhost:${PORT}`);
-  console.log(`📡  WebSocket broadcasting every 500ms`);
-  console.log(`📊  Symbols: USD/IDR · EUR/USD · GBP/JPY\n`);
+  console.log(`\n🚀  Relay Server  →  http://localhost:${PORT}`);
+  console.log(`📡  Relaying Binance stream: BTC/USDT · ETH/USDT · BNB/USDT`);
+  console.log(`📊  Events: @ticker (price) + @depth5 (order book)\n`);
 });
 
 // Graceful shutdown
 const shutdown = () => {
-  console.log('\n⏹  Shutting down Market Engine...');
-  simulator.stop();
+  console.log('\n⏹  Shutting down Relay Server...');
+  relay.stop();
   httpServer.close(() => {
     console.log('✅  Server closed.');
     process.exit(0);

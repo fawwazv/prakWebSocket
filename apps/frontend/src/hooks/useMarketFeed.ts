@@ -5,16 +5,19 @@ import { io, Socket } from "socket.io-client";
 
 const BACKEND_URL = "http://localhost:4000";
 const MAX_POINTS = 50;
-const SYMBOLS = ["USD/IDR", "EUR/USD", "GBP/JPY"] as const;
+const THROTTLE_MS = 250; // flush state 4x per detik maksimum
 
+export const SYMBOLS = ["BTC/USDT", "ETH/USDT", "BNB/USDT"] as const;
 export type SymbolKey = (typeof SYMBOLS)[number];
 
-export interface Tick {
+// ── Interfaces (sesuai output BinanceRelay) ────────────────────────────────
+export interface BinanceTicker {
   symbol: string;
-  currentPrice: number;
+  price: number;
+  volume: number;       // quote volume (USDT)
+  change24h: number;    // perubahan harga 24h dalam persen
+  direction: "UP" | "DOWN";
   timestamp: number;
-  type: "UP" | "DOWN";
-  volume: number;
 }
 
 export interface OrderLevel {
@@ -29,23 +32,28 @@ export interface OrderBookData {
 }
 
 export interface MarketState {
-  ticks: Record<string, Tick[]>;
-  latest: Record<string, Tick>;
+  ticks: Record<string, BinanceTicker[]>;   // sliding window untuk chart
+  latest: Record<string, BinanceTicker>;    // snapshot terbaru per simbol
   orderBooks: Record<string, OrderBookData>;
   connected: boolean;
 }
 
 const emptyTicks = () =>
-  Object.fromEntries(SYMBOLS.map((s) => [s, []])) as Record<string, Tick[]>;
+  Object.fromEntries(SYMBOLS.map((s) => [s, []])) as Record<string, BinanceTicker[]>;
 
 /**
- * useMarketFeed — WebSocket hook with sliding window + rAF batching
+ * useMarketFeed — Throttled WebSocket hook (250ms interval flush)
  *
- * Memory safety guarantees:
- * 1. Array capped at MAX_POINTS (50) via `.slice(-MAX_POINTS)`
- * 2. Buffer flushed via requestAnimationFrame (≤60 flushes/sec, not 6/sec)
- * 3. socket.off() + socket.disconnect() + cancelAnimationFrame in cleanup
- * 4. Functional updater `prev =>` avoids stale closures
+ * Arsitektur:
+ * - socket.on("tick")  → tulis ke tickBufferRef (tidak trigger render)
+ * - socket.on("orderBook") → tulis ke obBufferRef (tidak trigger render)
+ * - setInterval(250ms) → drain buffer → setState sekali (max 4 render/detik)
+ *
+ * Memory safety:
+ * 1. Chart array capped di MAX_POINTS (50) via .slice(-MAX_POINTS)
+ * 2. Buffer berupa Record<symbol, latestTick> — bukan array (tidak terakumulasi)
+ * 3. Cleanup: socket.off + socket.disconnect + clearInterval
+ * 4. Functional updater `prev =>` untuk menghindari stale closure
  */
 export function useMarketFeed(): MarketState {
   const [state, setState] = useState<MarketState>({
@@ -55,11 +63,11 @@ export function useMarketFeed(): MarketState {
     connected: false,
   });
 
-  // Buffer ref: receives raw WS events — never triggers re-render
-  const tickBufferRef = useRef<Record<string, Tick[]>>(emptyTicks());
-  // rAF handle ref: ensures only one rAF is scheduled at a time
-  const rafRef = useRef<number | null>(null);
-  // Socket ref: stable reference for cleanup
+  // Buffer refs: terima data mentah — TIDAK trigger render
+  // Hanya simpan tick TERBARU per simbol (bukan array) untuk efisiensi
+  const tickBufferRef = useRef<Record<string, BinanceTicker>>({});
+  const obBufferRef = useRef<Record<string, OrderBookData>>({});
+  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -70,76 +78,74 @@ export function useMarketFeed(): MarketState {
     });
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setState((prev) => ({ ...prev, connected: true }));
-    });
+    const handleConnect = () => setState((prev) => ({ ...prev, connected: true }));
+    const handleDisconnect = () => setState((prev) => ({ ...prev, connected: false }));
+    const handleTick = (data: BinanceTicker) => { tickBufferRef.current[data.symbol] = data; };
+    const handleOrderBook = (data: OrderBookData) => { obBufferRef.current[data.symbol] = data; };
 
-    socket.on("disconnect", () => {
-      setState((prev) => ({ ...prev, connected: false }));
-    });
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("tick", handleTick);
+    socket.on("orderBook", handleOrderBook);
 
-    // ── Tick handler: write-only to buffer, no setState here ──
-    socket.on("tick", (data: Tick) => {
-      const sym = data.symbol;
-      if (!tickBufferRef.current[sym]) {
-        tickBufferRef.current[sym] = [];
+    // ── Throttle flush: drain buffer → setState setiap 250ms ─────────────
+    flushIntervalRef.current = setInterval(() => {
+      // Ambil snapshot atomik & reset buffer
+      const tickSnap = { ...tickBufferRef.current };
+      const obSnap = { ...obBufferRef.current };
+      tickBufferRef.current = {};
+      obBufferRef.current = {};
+
+      // Jika tidak ada data baru di window ini, skip render
+      if (
+        Object.keys(tickSnap).length === 0 &&
+        Object.keys(obSnap).length === 0
+      ) {
+        return;
       }
-      tickBufferRef.current[sym].push(data);
 
-      // Schedule a single flush per animation frame (batches 500ms ticks → 1 render/frame)
-      if (rafRef.current === null) {
-        rafRef.current = requestAnimationFrame(() => {
-          // Snapshot & drain the buffer atomically
-          const snapshot = tickBufferRef.current;
-          tickBufferRef.current = emptyTicks();
-          rafRef.current = null;
+      setState((prev) => {
+        const newTicks = { ...prev.ticks };
+        const newLatest = { ...prev.latest };
+        const newOrderBooks = { ...prev.orderBooks };
 
-          setState((prev) => {
-            const newTicks = { ...prev.ticks };
-            const newLatest = { ...prev.latest };
+        // Merge tick ke sliding window
+        for (const [sym, ticker] of Object.entries(tickSnap)) {
+          const existing = newTicks[sym] ?? [];
+          const merged = [...existing, ticker];
+          newTicks[sym] =
+            merged.length > MAX_POINTS ? merged.slice(-MAX_POINTS) : merged;
+          newLatest[sym] = ticker;
+        }
 
-            for (const [sym, buffered] of Object.entries(snapshot)) {
-              if (!buffered || buffered.length === 0) continue;
+        // Update order books
+        for (const [sym, ob] of Object.entries(obSnap)) {
+          newOrderBooks[sym] = ob;
+        }
 
-              // Sliding window: merge + cap to MAX_POINTS
-              const merged = [...(newTicks[sym] ?? []), ...buffered];
-              newTicks[sym] =
-                merged.length > MAX_POINTS
-                  ? merged.slice(-MAX_POINTS)
-                  : merged;
+        return {
+          ...prev,
+          ticks: newTicks,
+          latest: newLatest,
+          orderBooks: newOrderBooks,
+        };
+      });
+    }, THROTTLE_MS);
 
-              // Latest tick for price display
-              newLatest[sym] = buffered[buffered.length - 1];
-            }
-
-            return { ...prev, ticks: newTicks, latest: newLatest };
-          });
-        });
-      }
-    });
-
-    // ── OrderBook handler: direct setState (low frequency, same rate as tick) ──
-    socket.on("orderBook", (data: OrderBookData) => {
-      setState((prev) => ({
-        ...prev,
-        orderBooks: { ...prev.orderBooks, [data.symbol]: data },
-      }));
-    });
-
-    // ── Cleanup: prevent ghost connections on re-mount (Strict Mode, HMR) ──
+    // ── Cleanup: cegah ghost connection pada re-mount (Strict Mode, HMR) ─
     return () => {
-      socket.off("connect");
-      socket.off("disconnect");
-      socket.off("tick");
-      socket.off("orderBook");
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("tick", handleTick);
+      socket.off("orderBook", handleOrderBook);
       socket.disconnect();
 
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+      if (flushIntervalRef.current !== null) {
+        clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
       }
     };
-  }, []); // empty deps = mount once, cleanup on unmount
+  }, []);
 
   return state;
 }

@@ -170,3 +170,12 @@ body {
   background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
   background-size: 24px 24px;
 }
+
+/* ─── Animated Price Clip ─── */
+/* AnimatedPrice uses inline overflow:hidden, but this utility is available
+   for any wrapper that needs to clip animated child elements */
+.price-clip {
+  overflow: hidden;
+  position: relative;
+}
+

@@ -1,17 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useMarketFeed } from "@/hooks/useMarketFeed";
+import { useMarketFeed, SYMBOLS } from "@/hooks/useMarketFeed";
 import { TickerStrip } from "@/components/TickerStrip";
 import { LiveChart } from "@/components/LiveChart";
 import { OrderBook } from "@/components/OrderBook";
 import { PriceCard } from "@/components/PriceCard";
-
-const SYMBOLS = ["USD/IDR", "EUR/USD", "GBP/JPY"] as const;
+import { AnimatedPrice } from "@/components/AnimatedPrice";
 
 export default function DashboardPage() {
   const { ticks, latest, orderBooks, connected } = useMarketFeed();
-  const [selectedSymbol, setSelectedSymbol] = useState<string>("USD/IDR");
+  const [selectedSymbol, setSelectedSymbol] = useState<string>("BTC/USDT");
 
   const selectedTick = latest[selectedSymbol];
   const selectedTicks = ticks[selectedSymbol] ?? [];
@@ -31,12 +30,12 @@ export default function DashboardPage() {
       <header
         style={{
           padding: "0 24px",
-          height: "56px",
+          height: "58px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           borderBottom: "1px solid var(--color-border)",
-          background: "rgba(2, 6, 23, 0.95)",
+          background: "rgba(2, 6, 23, 0.97)",
           backdropFilter: "blur(12px)",
           position: "sticky",
           top: 0,
@@ -47,17 +46,18 @@ export default function DashboardPage() {
           {/* Logo */}
           <div
             style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
+              width: "34px",
+              height: "34px",
+              borderRadius: "9px",
               background: "linear-gradient(135deg, #38bdf8, #818cf8)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "16px",
+              fontSize: "17px",
+              boxShadow: "0 0 16px rgba(56,189,248,0.3)",
             }}
           >
-            📈
+            ₿
           </div>
           <div>
             <h1
@@ -69,7 +69,7 @@ export default function DashboardPage() {
                 lineHeight: 1,
               }}
             >
-              LiveTicker
+              CryptoLive
             </h1>
             <p
               style={{
@@ -80,7 +80,7 @@ export default function DashboardPage() {
                 marginTop: "2px",
               }}
             >
-              Real-Time Financial Markets
+              Binance Real-Time Feed
             </p>
           </div>
         </div>
@@ -100,7 +100,11 @@ export default function DashboardPage() {
               background: connected
                 ? "rgba(74,222,128,0.08)"
                 : "rgba(248,113,113,0.08)",
-              border: `1px solid ${connected ? "rgba(74,222,128,0.25)" : "rgba(248,113,113,0.25)"}`,
+              border: `1px solid ${
+                connected
+                  ? "rgba(74,222,128,0.25)"
+                  : "rgba(248,113,113,0.25)"
+              }`,
             }}
           >
             <span
@@ -108,7 +112,9 @@ export default function DashboardPage() {
                 width: "7px",
                 height: "7px",
                 borderRadius: "50%",
-                background: connected ? "var(--color-up)" : "var(--color-down)",
+                background: connected
+                  ? "var(--color-up)"
+                  : "var(--color-down)",
                 display: "block",
                 animation: connected ? "status-pulse 2s infinite" : "none",
               }}
@@ -117,12 +123,14 @@ export default function DashboardPage() {
               style={{
                 fontSize: "11px",
                 fontWeight: 600,
-                color: connected ? "var(--color-up)" : "var(--color-down)",
+                color: connected
+                  ? "var(--color-up)"
+                  : "var(--color-down)",
                 fontFamily: "var(--font-mono)",
                 letterSpacing: "0.05em",
               }}
             >
-              {connected ? "CONNECTED" : "DISCONNECTED"}
+              {connected ? "LIVE · BINANCE" : "DISCONNECTED"}
             </span>
           </div>
         </div>
@@ -145,7 +153,7 @@ export default function DashboardPage() {
         }}
       >
         {/* ── Symbol Selector Cards ── */}
-        <section id="symbol-cards" aria-label="Currency Pair Selector">
+        <section id="symbol-cards" aria-label="Crypto Pair Selector">
           <div
             style={{
               display: "grid",
@@ -171,7 +179,7 @@ export default function DashboardPage() {
           aria-label="Live Chart and Order Book"
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 320px",
+            gridTemplateColumns: "1fr 340px",
             gap: "20px",
             flex: 1,
             minHeight: "420px",
@@ -180,7 +188,12 @@ export default function DashboardPage() {
           {/* Live Chart Panel */}
           <div
             className="card"
-            style={{ display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              minHeight: 0,
+            }}
           >
             {/* Chart Header */}
             <div
@@ -195,63 +208,103 @@ export default function DashboardPage() {
               <div>
                 <div
                   style={{
-                    fontSize: "12px",
+                    fontSize: "11px",
                     color: "var(--color-text-muted)",
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
                     marginBottom: "4px",
                   }}
                 >
-                  Live Price Chart
+                  Live Price Chart · Binance
                 </div>
                 <div
                   style={{
-                    fontSize: "18px",
+                    fontSize: "17px",
                     fontWeight: 700,
                     fontFamily: "var(--font-mono)",
                     color: "var(--color-text-primary)",
-                    letterSpacing: "0.03em",
+                    letterSpacing: "0.04em",
                   }}
                 >
                   {selectedSymbol}
                 </div>
               </div>
 
+              {/* Price besar di chart header — pakai AnimatedPrice */}
               <div style={{ textAlign: "right" }}>
                 {selectedTick && (
                   <div
                     style={{
-                      fontSize: "24px",
-                      fontWeight: 700,
-                      fontFamily: "var(--font-mono)",
-                      color:
-                        selectedTick.type === "UP"
-                          ? "var(--color-up)"
-                          : "var(--color-down)",
-                      letterSpacing: "0.02em",
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: "4px",
+                      justifyContent: "flex-end",
                     }}
                   >
-                    {selectedSymbol.includes("IDR")
-                      ? selectedTick.currentPrice.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                        })
-                      : selectedTick.currentPrice.toFixed(5)}
+                    <span
+                      style={{
+                        fontSize: "14px",
+                        color: "var(--color-text-muted)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      $
+                    </span>
+                    <AnimatedPrice
+                      price={selectedTick.price}
+                      symbol={selectedSymbol}
+                      direction={selectedTick.direction}
+                      size="lg"
+                    />
                   </div>
                 )}
                 <div
                   style={{
-                    fontSize: "11px",
-                    color: "var(--color-text-muted)",
-                    fontFamily: "var(--font-mono)",
+                    display: "flex",
+                    gap: "10px",
+                    justifyContent: "flex-end",
+                    marginTop: "4px",
                   }}
                 >
-                  {selectedTicks.length} / 50 pts
+                  {selectedTick && (
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        fontFamily: "var(--font-mono)",
+                        fontWeight: 600,
+                        color:
+                          selectedTick.change24h >= 0
+                            ? "var(--color-up)"
+                            : "var(--color-down)",
+                        transition: "color 300ms ease",
+                      }}
+                    >
+                      {selectedTick.change24h >= 0 ? "+" : ""}
+                      {selectedTick.change24h.toFixed(2)}% (24h)
+                    </span>
+                  )}
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--color-text-muted)",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {selectedTicks.length} / 50 pts
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Chart Area */}
-            <div style={{ flex: 1, padding: "16px 8px 8px", minHeight: 0, height: "320px" }}>
+            <div
+              style={{
+                flex: 1,
+                padding: "16px 8px 8px",
+                minHeight: 0,
+                height: "320px",
+              }}
+            >
               <LiveChart symbol={selectedSymbol} ticks={selectedTicks} />
             </div>
           </div>
@@ -269,14 +322,14 @@ export default function DashboardPage() {
             >
               <div
                 style={{
-                  fontSize: "12px",
+                  fontSize: "11px",
                   color: "var(--color-text-muted)",
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   marginBottom: "4px",
                 }}
               >
-                Order Book
+                Order Book · Depth 5
               </div>
               <div
                 style={{
@@ -315,7 +368,7 @@ export default function DashboardPage() {
             fontFamily: "var(--font-mono)",
           }}
         >
-          ⚡ Broadcasting every 500ms · Sliding window 50 pts · rAF batched
+          ⚡ Live Binance Feed · Throttled 250ms · Sliding window 50 pts · Framer Motion
         </span>
         <span
           style={{
@@ -323,14 +376,19 @@ export default function DashboardPage() {
             color: "var(--color-text-muted)",
           }}
         >
-          LiveTicker © {new Date().getFullYear()} · Simulated Data Only
+          CryptoLive © {new Date().getFullYear()} · Data from Binance WebSocket
         </span>
       </footer>
 
       <style jsx global>{`
         @keyframes status-pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
-          50% { box-shadow: 0 0 0 4px rgba(74, 222, 128, 0); }
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+          }
+          50% {
+            box-shadow: 0 0 0 4px rgba(74, 222, 128, 0);
+          }
         }
       `}</style>
     </div>
@@ -341,7 +399,6 @@ export default function DashboardPage() {
 function LiveClock() {
   const [time, setTime] = useState<Date | null>(null);
 
-  // useEffect ensures this only runs on client, preventing hydration mismatch
   useEffect(() => {
     setTime(new Date());
     const interval = setInterval(() => setTime(new Date()), 1000);

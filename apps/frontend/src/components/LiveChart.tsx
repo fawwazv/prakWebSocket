@@ -10,11 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Tick } from "@/hooks/useMarketFeed";
+import { BinanceTicker } from "@/hooks/useMarketFeed";
 
 interface LiveChartProps {
   symbol: string;
-  ticks: Tick[];
+  ticks: BinanceTicker[];
 }
 
 function formatTime(ts: number): string {
@@ -22,10 +22,12 @@ function formatTime(ts: number): string {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
 }
 
-function formatPrice(symbol: string, price: number): string {
-  return symbol.includes("IDR")
-    ? price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : price.toFixed(5);
+function formatPrice(_symbol: string, price: number): string {
+  // Crypto prices: formatted with commas, 2 decimals
+  return price.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 interface CustomTooltipProps {
@@ -62,21 +64,21 @@ export function LiveChart({ symbol, ticks }: LiveChartProps) {
     () =>
       ticks.map((t) => ({
         time: formatTime(t.timestamp),
-        price: t.currentPrice,
-        type: t.type,
+        price: t.price,
+        direction: t.direction,
       })),
     [ticks]
   );
 
-  const isCurrentlyUp = ticks.length >= 2
-    ? ticks[ticks.length - 1].currentPrice >= ticks[ticks.length - 2].currentPrice
+  const isCurrentlyUp = ticks.length >= 1
+    ? ticks[ticks.length - 1].direction !== "DOWN"
     : true;
 
   const strokeColor = isCurrentlyUp ? "#4ade80" : "#f87171";
   const gradientId = `gradient-${symbol.replace("/", "-")}`;
 
   // Dynamic Y-axis domain with padding
-  const prices = ticks.map((t) => t.currentPrice);
+  const prices = ticks.map((t) => t.price);
   const minP = prices.length > 0 ? Math.min(...prices) : 0;
   const maxP = prices.length > 0 ? Math.max(...prices) : 1;
   const pad = (maxP - minP) * 0.3 || maxP * 0.001;
@@ -148,7 +150,7 @@ export function LiveChart({ symbol, ticks }: LiveChartProps) {
           tick={{ fill: "#475569", fontSize: 10, fontFamily: "var(--font-mono)" }}
           tickLine={false}
           axisLine={false}
-          width={symbol.includes("IDR") ? 72 : 68}
+          width={80}
           tickFormatter={(v) => formatPrice(symbol, v)}
         />
 
